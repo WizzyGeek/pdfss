@@ -1,0 +1,8 @@
+*.pdf
+bin/
+obj/
+*.xlsx
+*.xls
+*.png
+*.jpg
+*.jpeg
