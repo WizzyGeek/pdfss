@@ -1,36 +1,102 @@
 ﻿using UglyToad.PdfPig;
 using PDFtoImage;
 using System.Drawing;
+using SkiaSharp;
+using NPOI.SS.UserModel;
+using NPOI.XSSF.UserModel;
+using NPOI.Util;
+using System.ComponentModel.Design;
 
 namespace pdfss;
 
 class Program
 {
+
+    static void PrintHelp() {
+        Console.WriteLine("Usage:\n\tpdfss <FILE> [-o/--output <FILE>]\n\n\t<FILE>\t\tThe PDF file to process\n\t-o/--output\tThe destination path of the generated .xlsx file");
+    }
+
     static int Main(string[] args)
     {
         if (args.Length == 0) {
-            Console.Write("Required a path\nUsage:\n\tpdfss <FILE>\n");
+            Console.WriteLine("Required atleast a path");
+            PrintHelp();
             return 0;
         }
 
+        string path;
+        string output;
+
         if (args.Length > 1) {
-            Console.WriteLine("WARNING: Multiple arguments provided, only first considered");
+            int i;
+            for(i = 0; i < args.Length - 1; i++) {
+                if (args[i] == "-o" || args[i] == "--output") {
+                    output = args[i + 1];
+                    goto OutputFound;
+                }
+            }
+
+            path = args[0];
+            output = Path.GetFileNameWithoutExtension(path) + ".xlsx";
+            Console.WriteLine("[!] WARNING: Multiple unknown arguments supplied!");
+            goto OutputAndPathFound;
+
+            OutputFound:
+            for(int j = 0; j < args.Length; j++) {
+                if (j == i || j == i + 1) continue;
+                path = args[j];
+                goto OutputAndPathFound;
+            }
+
+            Console.WriteLine("Required parameter <FILE> not found!");
+            PrintHelp();
+            return 0;
+
+            OutputAndPathFound:;
+        }
+        else {
+            path = args[0];
+            output = Path.GetFileNameWithoutExtension(path) + ".xlsx";
         }
 
-        string path = args[0];
 
         if (!File.Exists(path)) {
             Console.WriteLine("The provided file path does not exist");
             return 0;
         }
 
-        float paddingX = 15; // Padding in points not pixels!
-        float paddingY = 15;
+        const float paddingX = 15; // Padding in points not pixels!
+        const float paddingY = 15;
+        const float magXL = 1.5F;
+
+        using var fdoc = File.OpenRead(path);
+        Console.WriteLine($"[*] Reading PDF file at {fdoc.Name}");
 
         using PdfDocument pdf = PdfDocument.Open(path);
-        using var fdoc = File.OpenRead(path);
+        using IWorkbook workbook = new XSSFWorkbook();
+
+        ISheet sheet1 = workbook.CreateSheet("sheet1");
+        IDrawing patriarch = sheet1.CreateDrawingPatriarch();
 
         var pages = pdf.GetPages();
+
+        int row = 1;
+
+        IRow r = sheet1.CreateRow(0);
+        r.CreateCell(0).SetCellValue("Comment");
+        r.CreateCell(1).SetCellValue("Annotation");
+
+        IFont font = workbook.CreateFont();
+        font.IsBold = true;
+
+        for (int i = 0; i <= 1; i++) {
+            r.GetCell(i).RichStringCellValue.ApplyFont(font);
+            r.GetCell(i).CellStyle.Alignment = HorizontalAlignment.Center;
+            r.GetCell(i).CellStyle.VerticalAlignment = VerticalAlignment.Center;
+            sheet1.SetColumnWidth(i, 25 * 256);
+        }
+
+        r.HeightInPoints = (float)Units.ToPoints(Units.EMU_PER_CENTIMETER);
 
         foreach (var page in pages) {
             double maxy = page.Height;
@@ -62,11 +128,10 @@ class Program
                 );
 
                 if (Double.IsFinite(bbox.Width) && Double.IsFinite(bbox.Height) && ann.Content != "") {
-                    string name = $"img_{page.Number}_{ann.Name}.png";
-                    Console.WriteLine($"[+] Saving image {name}");
+                    Console.WriteLine($"[+] Processing annotation {ann.Name} on page {page.Number}");
                     #pragma warning disable CA1416 // Validate platform compatibility
-                    Conversion.SavePng(
-                        name,
+
+                    SKBitmap bmap = Conversion.ToImage(
                         fdoc,
                         leaveOpen: true,
                         page: page.Number - 1,
@@ -79,9 +144,24 @@ class Program
                         )
                     );
                     #pragma warning restore CA1416 // Validate platform compatibility
+                    IRow ri = sheet1.CreateRow(row);
+                    ri.HeightInPoints = bbox.Height * magXL;
+                    SKData dat = bmap.Encode(SKEncodedImageFormat.Png, 90);
+                    XSSFClientAnchor anchor = new(0, 0, Units.ToEMU(bbox.Width * magXL), Units.ToEMU(bbox.Height * magXL), 1, row, 1, row++);
+                    anchor.AnchorType = AnchorType.MoveDontResize;
+                    XSSFPicture img = (XSSFPicture)patriarch.CreatePicture(anchor, workbook.AddPicture(dat.ToArray(), PictureType.PNG));
+                    img.LineStyle = LineStyle.Solid;
+                    img.SetLineStyleColor(0, 0, 0);
+                    img.LineWidth = 1;
+                    ri.CreateCell(0).SetCellValue(ann.Content);
                 }
             }
         }
+
+        using FileStream sw = File.Create(output);
+        workbook.Write(sw, false);
+        Console.WriteLine($"[*] Saved output at {sw.Name}");
+
         return 0;
     }
 }
