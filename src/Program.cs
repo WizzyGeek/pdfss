@@ -107,14 +107,24 @@ class Program
                 // min y - 2
                 // max y - 3
 
-                foreach (var q in ann.QuadPoints) {
-                    foreach (var p in q.Points) {
-                        if (p.X > lims[1]) lims[1] = p.X;
-                        if (p.X < lims[0]) lims[0] = p.X;
-                        if (p.Y > lims[3]) lims[3] = p.Y;
-                        if (p.Y < lims[2]) lims[2] = p.Y;
-                    }
-                };
+                // PDF info
+                // Console.WriteLine(ann.AnnotationDictionary);
+
+                // For Text annotations
+                // foreach (var q in ann.QuadPoints) {
+                //     foreach (var p in q.Points) {
+                //         if (p.X > lims[1]) lims[1] = p.X;
+                //         if (p.X < lims[0]) lims[0] = p.X;
+                //         if (p.Y > lims[3]) lims[3] = p.Y;
+                //         if (p.Y < lims[2]) lims[2] = p.Y;
+                //     }
+                // };
+
+                if (ann.Type != UglyToad.PdfPig.Annotations.AnnotationType.FreeText) continue;
+                lims[0] = ann.Rectangle.Left;
+                lims[1] = ann.Rectangle.Right;
+                lims[2] = ann.Rectangle.Bottom;
+                lims[3] = ann.Rectangle.Top;
 
                 // Do the affine transform, 2 is max y 3 is min y
                 lims[2] = maxy - lims[2];
@@ -127,6 +137,8 @@ class Program
                     float.Min((float)(lims[2] - lims[3]) + 2 * paddingY, (float)maxy)
                 );
 
+                // Console.WriteLine(ann.AnnotationDictionary);
+                Console.WriteLine(ann.ToString());
                 if (Double.IsFinite(bbox.Width) && Double.IsFinite(bbox.Height) && ann.Content != "") {
                     Console.WriteLine($"[+] Processing annotation {ann.Name} on page {page.Number}");
                     #pragma warning disable CA1416 // Validate platform compatibility
